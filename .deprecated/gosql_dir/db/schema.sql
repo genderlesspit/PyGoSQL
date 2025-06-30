@@ -1,0 +1,15 @@
+CREATE TABLE test (
+  id INTEGER PRIMARY KEY
+);
+
+CREATE TABLE users (
+  id TEXT PRIMARY KEY,
+  name TEXT
+);
+
+CREATE TABLE sessions (
+  id TEXT PRIMARY KEY,
+  user TEXT,
+  token TEXT,
+  FOREIGN KEY (user) REFERENCES users(id) ON DELETE CASCADE
+);

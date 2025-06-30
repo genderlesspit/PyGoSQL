@@ -1,0 +1,1 @@
+UPDATE {{table}} SET {{updates}} WHERE id = ?;
