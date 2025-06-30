@@ -7,9 +7,10 @@ import (
     "gosql/database"
     "net/http"
     "path/filepath"
-    //"regexp"
+    "regexp"
     "strings"
     "os"
+    "log"
 )
 
 // Endpoint represents an HTTP endpoint with its routing and SQL execution details
@@ -220,6 +221,15 @@ func CreateHandler(db *database.Database, sqlPath string) http.HandlerFunc {
         // Execute SQL
         result, err := ExecuteSQLFromPath(db, sqlPath, params)
         if err != nil {
+            // Check if it's a constraint error (client error)
+            if isConstraintError(err) {
+                log.Printf("   - Constraint violation: %v", err)
+                WriteErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("Data validation failed: %v", err))
+                return
+            }
+
+            // Otherwise it's a server error
+            log.Printf("   - Server error: %v", err)
             WriteErrorResponse(w, http.StatusInternalServerError, fmt.Sprintf("SQL execution failed: %v", err))
             return
         }
@@ -230,6 +240,16 @@ func CreateHandler(db *database.Database, sqlPath string) http.HandlerFunc {
             "data":    result,
         })
     }
+}
+
+// Helper to identify constraint errors
+func isConstraintError(err error) bool {
+    errStr := strings.ToLower(err.Error())
+    return strings.Contains(errStr, "constraint") ||
+           strings.Contains(errStr, "unique") ||
+           strings.Contains(errStr, "not null") ||
+           strings.Contains(errStr, "foreign key") ||
+           strings.Contains(errStr, "check constraint")
 }
 
 // ExtractTableName extracts the table name from a SQL file path
@@ -249,46 +269,66 @@ func ExtractTableName(sqlPath string) string {
     return "" // Not a table-specific path
 }
 
-// ProcessSQLTemplate processes SQL template variables like {{table}}, {{columns}}, etc.
 func ProcessSQLTemplate(sqlContent string, tableName string, params map[string]interface{}) string {
-    result := sqlContent
+    log.Printf("   - ProcessSQLTemplate called:")
+    log.Printf("   - Original SQL: %s", sqlContent)
+    log.Printf("   - Table name: %s", tableName)
+    log.Printf("   - Parameters: %+v", params)
 
-    // Replace table name
+    // Add table name to params for {{table}} replacement
+    allParams := make(map[string]interface{})
+    for k, v := range params {
+        allParams[k] = v
+    }
     if tableName != "" {
-        result = strings.ReplaceAll(result, "{{table}}", tableName)
+        allParams["table"] = tableName
+        log.Printf("   - Added table to params: %s", tableName)
     }
 
-    // Process columns placeholder
-    if strings.Contains(result, "{{columns}}") {
-        if columnList, ok := params["columns"].(string); ok {
-            result = strings.ReplaceAll(result, "{{columns}}", columnList)
-        } else {
-            result = strings.ReplaceAll(result, "{{columns}}", "*")
+    // SPECIAL HANDLING: Generate columns and values from actual JSON data
+    if len(params) > 0 {
+        var columns []string
+        var values []string
+
+        for key, value := range params {
+            columns = append(columns, key)
+            values = append(values, fmt.Sprintf("'%v'", value))
         }
+
+        allParams["columns"] = strings.Join(columns, ", ")
+        allParams["values"] = strings.Join(values, ", ")
+
+        log.Printf("   - Generated columns: %s", allParams["columns"])
+        log.Printf("   - Generated values: %s", allParams["values"])
     }
 
-    // Process values placeholder for INSERT statements
-    if strings.Contains(result, "{{values}}") {
-        if valueList, ok := params["values"].(string); ok {
-            result = strings.ReplaceAll(result, "{{values}}", valueList)
-        } else {
-            // Generate placeholder based on parameter count
-            placeholders := make([]string, len(params))
-            for i := range placeholders {
-                placeholders[i] = "?"
-            }
-            result = strings.ReplaceAll(result, "{{values}}", strings.Join(placeholders, ", "))
-        }
-    }
+    log.Printf("   - All available params: %+v", allParams)
 
-    // Process updates placeholder for UPDATE statements
-    if strings.Contains(result, "{{updates}}") {
-        if updateList, ok := params["updates"].(string); ok {
-            result = strings.ReplaceAll(result, "{{updates}}", updateList)
-        } else {
-            result = strings.ReplaceAll(result, "{{updates}}", "column = ?")
+    // Regex to find all {{variable}} patterns
+    re := regexp.MustCompile(`\{\{(\w+)\}\}`)
+
+    // Find all matches first for logging
+    matches := re.FindAllString(sqlContent, -1)
+    log.Printf("   - Found template variables: %v", matches)
+
+    result := re.ReplaceAllStringFunc(sqlContent, func(match string) string {
+        // Extract variable name from {{variable}}
+        varName := strings.Trim(match, "{}")
+
+        // If variable exists in params, replace it
+        if value, exists := allParams[varName]; exists {
+            replacement := fmt.Sprintf("%v", value)
+            log.Printf("   - Replacing %s with '%s'", match, replacement)
+            return replacement
         }
-    }
+
+        // Leave unmatched templates as-is
+        log.Printf("   - No replacement found for %s - leaving as-is", match)
+        return match
+    })
+
+    log.Printf("Final SQL: %s", result)
+    log.Printf("ProcessSQLTemplate complete\n")
 
     return result
 }

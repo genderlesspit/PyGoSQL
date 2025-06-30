@@ -115,103 +115,44 @@ func (d *Database) ApplySchema(schema string) error {
 // For SELECT queries: returns map with "columns", "rows", "count" keys
 // For INSERT/UPDATE/DELETE: returns map with "last_insert_id", "rows_affected", "success" keys
 func (d *Database) ExecSQL(query string, args ...interface{}) (interface{}, error) {
+    log.Printf("Database.ExecSQL called:")
+    log.Printf("   - Query: %s", query)
+    log.Printf("   - Args: %+v", args)
+
     d.mu.Lock()
     defer d.mu.Unlock()
 
     if d.closed {
+        log.Printf("   - ERROR: Database is closed")
         return nil, fmt.Errorf("database is closed")
     }
 
     query = strings.TrimSpace(query)
     if query == "" {
+        log.Printf("   - ERROR: Empty query")
         return nil, fmt.Errorf("empty query")
     }
 
-    // Determine query type based on the first word
-    upperQuery := strings.ToUpper(query)
-
-    if strings.HasPrefix(upperQuery, "SELECT") ||
-       strings.HasPrefix(upperQuery, "WITH") ||
-       strings.HasPrefix(upperQuery, "EXPLAIN") ||
-       strings.HasPrefix(upperQuery, "PRAGMA") {
-        return d.executeQuery(query, args...)
-    } else {
-        return d.executeExec(query, args...)
-    }
-}
-
-// executeQuery handles SELECT-type queries
-func (d *Database) executeQuery(query string, args ...interface{}) (interface{}, error) {
-    rows, err := d.DB.Query(query, args...)
-    if err != nil {
-        return nil, fmt.Errorf("query failed: %w", err)
-    }
-    defer rows.Close()
-
-    // Get column names
-    columns, err := rows.Columns()
-    if err != nil {
-        return nil, fmt.Errorf("failed to get columns: %w", err)
-    }
-
-    // Prepare scanners for each column
-    columnCount := len(columns)
-    scanArgs := make([]interface{}, columnCount)
-    columnPointers := make([]interface{}, columnCount)
-    for i := range columnPointers {
-        columnPointers[i] = &scanArgs[i]
-    }
-
-    // Scan all rows
-    var resultRows []map[string]interface{}
-    for rows.Next() {
-        if err := rows.Scan(columnPointers...); err != nil {
-            return nil, fmt.Errorf("failed to scan row: %w", err)
-        }
-
-        row := make(map[string]interface{})
-        for i, colName := range columns {
-            val := scanArgs[i]
-
-            // Handle SQLite types properly
-            switch v := val.(type) {
-            case []byte:
-                row[colName] = string(v)
-            case nil:
-                row[colName] = nil
-            default:
-                row[colName] = v
-            }
-        }
-        resultRows = append(resultRows, row)
-    }
-
-    if err := rows.Err(); err != nil {
-        return nil, fmt.Errorf("row iteration error: %w", err)
-    }
-
-    return map[string]interface{}{
-        "columns": columns,
-        "rows":    resultRows,
-        "count":   len(resultRows),
-    }, nil
-}
-
-// executeExec handles INSERT, UPDATE, DELETE, CREATE, etc.
-func (d *Database) executeExec(query string, args ...interface{}) (interface{}, error) {
+    // Just execute the raw SQL directly
+    log.Printf("   - Executing raw SQL...")
     result, err := d.DB.Exec(query, args...)
     if err != nil {
-        return nil, fmt.Errorf("exec failed: %w", err)
+        log.Printf("   - ERROR: SQL execution failed: %v", err)
+        return nil, err
     }
 
-    lastId, _ := result.LastInsertId()
+    // For INSERT/UPDATE/DELETE, return basic info
     rowsAffected, _ := result.RowsAffected()
+    lastInsertId, _ := result.LastInsertId()
 
-    return map[string]interface{}{
-        "last_insert_id": lastId,
-        "rows_affected":  rowsAffected,
+    response := map[string]interface{}{
         "success":        true,
-    }, nil
+        "rows_affected":  rowsAffected,
+        "last_insert_id": lastInsertId,
+    }
+
+    log.Printf("   - SUCCESS: %+v", response)
+    return response, nil
 }
 
 // Close closes the database connection and marks it as closed
