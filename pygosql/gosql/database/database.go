@@ -176,9 +176,7 @@ func cleanSQLSchema(schema string) string {
     return strings.Join(cleanedLines, "\n")
 }
 
-// ExecSQL executes a SQL query and returns results in a standardized format
-// For SELECT queries: returns map with "columns", "rows", "count" keys
-// For INSERT/UPDATE/DELETE: returns map with "last_insert_id", "rows_affected", "success" keys
+// ExecSQL executes a SQL query and returns whatever the database outputs
 func (d *Database) ExecSQL(query string, args ...interface{}) (interface{}, error) {
     log.Printf("Database.ExecSQL called:")
     log.Printf("   - Query: %s", query)
@@ -188,36 +186,72 @@ func (d *Database) ExecSQL(query string, args ...interface{}) (interface{}, erro
     defer d.mu.Unlock()
 
     if d.closed {
-        log.Printf("   - ERROR: Database is closed")
         return nil, fmt.Errorf("database is closed")
     }
 
     query = strings.TrimSpace(query)
     if query == "" {
-        log.Printf("   - ERROR: Empty query")
         return nil, fmt.Errorf("empty query")
     }
 
-    // Just execute the raw SQL directly
-    log.Printf("   - Executing raw SQL...")
-    result, err := d.DB.Exec(query, args...)
-    if err != nil {
-        log.Printf("   - ERROR: SQL execution failed: %v", err)
-        return nil, err
+    // Just execute it and let the database handle everything
+    // For SELECT queries, use Query() to get rows
+    // For everything else, use Exec() to get result metadata
+
+    queryUpper := strings.ToUpper(strings.TrimSpace(query))
+    if strings.HasPrefix(queryUpper, "SELECT") {
+        // Return rows as JSON-like structure
+        rows, err := d.DB.Query(query, args...)
+        if err != nil {
+            return nil, err
+        }
+        defer rows.Close()
+
+        // Convert to simple [][]interface{} or similar
+        columns, _ := rows.Columns()
+        var results [][]interface{}
+
+        // Add column headers as first row
+        headers := make([]interface{}, len(columns))
+        for i, col := range columns {
+            headers[i] = col
+        }
+        results = append(results, headers)
+
+        // Add data rows
+        for rows.Next() {
+            values := make([]interface{}, len(columns))
+            valuePtrs := make([]interface{}, len(columns))
+            for i := range values {
+                valuePtrs[i] = &values[i]
+            }
+
+            rows.Scan(valuePtrs...)
+
+            row := make([]interface{}, len(columns))
+            for i, val := range values {
+                if b, ok := val.([]byte); ok {
+                    row[i] = string(b)
+                } else {
+                    row[i] = val
+                }
+            }
+            results = append(results, row)
+        }
+
+        return results, nil
+    } else {
+        // Just return what Exec() gives us
+        result, err := d.DB.Exec(query, args...)
+        if err != nil {
+            return nil, err
+        }
+
+        affected, _ := result.RowsAffected()
+        lastId, _ := result.LastInsertId()
+
+        return []interface{}{affected, lastId}, nil
     }
-
-    // For INSERT/UPDATE/DELETE, return basic info
-    rowsAffected, _ := result.RowsAffected()
-    lastInsertId, _ := result.LastInsertId()
-
-    response := map[string]interface{}{
-        "success":        true,
-        "rows_affected":  rowsAffected,
-        "last_insert_id": lastInsertId,
-    }
-
-    log.Printf("   - SUCCESS: %+v", response)
-    return response, nil
 }
 
 // Close closes the database connection and marks it as closed
