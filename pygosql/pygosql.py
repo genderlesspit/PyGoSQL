@@ -1,5 +1,4 @@
 import asyncio
-import time
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
@@ -63,20 +62,25 @@ class NamespaceObject:
         ops = ', '.join(self.operations)
         return f"{self.name}({ops})"
 
+
 class PyGoSQLError(Exception):
     """Base exception for PyGoSQL errors."""
     pass
 
+
 class ClientValidationError(PyGoSQLError):
     """Raised when the server returns a 400-level error (client validation)."""
+
     def __init__(self, message: str, status_code: int, response_data: Dict[str, Any]):
         super().__init__(message)
         self.status_code = status_code
         self.response_data = response_data
 
+
 class ServerError(PyGoSQLError):
     """Raised when the server returns a 500-level error."""
     pass
+
 
 class APIRequester:
     """Dynamic HTTP client that builds namespaced functions from discovered routes."""
@@ -187,8 +191,8 @@ class PyGoSQL:
     instance: Optional['PyGoSQL'] = None
 
     def __init__(self,
-                 go_file: Path,
-                 sql_root: Path,
+                 sql_root: Path = None,
+                 #go_file: Path = Path("./gosql/main.go"),
                  db_path: Path = None,
                  port: Optional[int] = None,
                  base_url: Optional[str] = "/api/v1",
@@ -198,9 +202,9 @@ class PyGoSQL:
         """Initialize PyGoSQL client."""
         # Server configuration
         self._port = port or PortManager.random_port()
-        self._go_file = go_file
-        self._db_path = db_path
-        self._sql_root = sql_root
+        self._go_file = Path("./gosql/main.go")
+        self._sql_root = Path.cwd() / "sql" if sql_root is None else sql_root
+        self._db_path = Path.cwd() / "sql" / "app.db" if db_path is None else db_path
         self._base_url = base_url
         self._debug = debug
         self._cors = cors
@@ -216,24 +220,20 @@ class PyGoSQL:
         self._health: Optional[Callable] = None
         self._docs: Optional[Callable] = None
 
-        # Build kwargs for GoServer, excluding None values
-        server_kwargs = {
-            'go_file': self._go_file,
+        go_args = []
+        for k, v in {
             'port': self._port,
-            'sql_root': self._sql_root,
-            'verbose': verbose
-        }
+            'sql': str(self._sql_root.resolve()),  # Changed from 'sql_root' to 'sql'
+            'db': self._db_path,                   # Changed from 'db_path' to 'db'
+            'base': self._base_url,                # Changed from 'base_url' to 'base'
+            'debug': self._debug,
+            'cors': self._cors
+        }.items():
+            if v is not None:
+                go_args.extend([f"-{k}", str(v).lower() if isinstance(v, bool) else str(v)])
 
-        server_kwargs.update({
-            k: v for k, v in {
-                'db_path': self._db_path,
-                'base_url': self._base_url,
-                'debug': self._debug,
-                'cors': self._cors
-            }.items() if v is not None
-        })
-
-        self.server = GoServer(**server_kwargs)
+        # Remove verbose from go_args since it's not a Go flag
+        self.server = GoServer(go_file=self._go_file, go_args=go_args, verbose=verbose)
 
         if self._verbose:
             props = "\n".join(f"{k}: {v}" for k, v in vars(self).items())
@@ -460,9 +460,6 @@ await client.stop()
 
 async def debug():
     client = PyGoSQL(
-        go_file=Path("./gosql/main.go"),
-        sql_root=Path("./sql"),
-        db_path=Path("./data/app.db"),
         debug=True,
         verbose=True
     )
@@ -477,6 +474,7 @@ async def debug():
     finally:
         # ALWAYS clean up
         await client.stop()
+
 
 if __name__ == "__main__":
     asyncio.run(debug())

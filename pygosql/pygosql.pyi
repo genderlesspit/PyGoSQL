@@ -148,8 +148,8 @@ class PyGoSQL:
     instance: Optional['PyGoSQL'] = None
 
     def __init__(self,
-                 go_file: Path,
-                 sql_root: Path,
+                 sql_root: Path = Path.cwd(),
+                 go_file: Path = Path("./gosql/main.go"),
                  db_path: Path = None,
                  port: Optional[int] = None,
                  base_url: Optional[str] = "/api/v1",
