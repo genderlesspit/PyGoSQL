@@ -429,35 +429,6 @@ class PyGoSQL:
                 f"tables=[{tables}], routes={route_count}, "
                 f"api={self.base_url})")
 
-
-# Example usage:
-"""
-client = PyGoSQL(
-    go_file=Path("./gosql/main.go"),
-    sql_root=Path("./sql"),
-    db_path=Path("./data/app.db"),
-    port=8080,
-    debug=True,
-    verbose=True
-)
-
-await client.launch()
-
-# Dynamic table access
-users = await client.users.select()
-await client.users.insert(name="John", email="john@test.com")
-await client.users.update(id=1, name="Jane")
-await client.users.delete(id=1)
-
-# Hardcoded system functions
-health = await client.health()
-docs = await client.docs()
-
-# Cleanup
-await client.stop()
-"""
-
-
 async def debug():
     client = PyGoSQL(
         debug=True,
@@ -472,7 +443,6 @@ async def debug():
         print(f"Result: {result}")
 
     finally:
-        # ALWAYS clean up
         await client.stop()
 
 
