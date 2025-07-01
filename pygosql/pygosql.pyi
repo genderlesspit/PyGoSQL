@@ -257,6 +257,11 @@ class PyGoSQL:
             AttributeError: If namespace not found
         """
         ...
+    
+    @cached_property
+    def table_dirs(self) -> List[str]:
+        """Get all table paths in ._sql_root / Tables"""
+        ...
 
     @property
     def tables(self) -> List[str]:

@@ -393,8 +393,14 @@ class PyGoSQL:
         """Dynamic namespace access."""
         log.debug(f"Attempting to retrieve attribute, {name}...")
         # Don't intercept private attributes or known instance attributes
-        if name.startswith('_') or name in ('server', 'logger'):
+        if name.startswith('_') or name in ('server', 'logger', 'verbose', 'log'):  # Remove 'views' from here
             raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+
+        # Check for class-level descriptors first (like your cached_property views)
+        if hasattr(self.__class__, name):
+            attr = getattr(self.__class__, name)
+            if hasattr(attr, '__get__'):
+                return attr.__get__(self, self.__class__)
 
         if not self._requester:
             raise RuntimeError("PyGoSQL not launched. Call await client.launch() first.")
@@ -410,6 +416,14 @@ class PyGoSQL:
                 f"Available tables: {available_tables}. "
                 f"Available namespaces: {available_ns}"
             )
+
+    @cached_property
+    def table_dirs(self) -> List[str]:
+        """Get all table paths in ._sql_root / Tables"""
+        if self._verbose: log.debug(f"{self}: Attempting to fetch tables from {self._sql_root}")
+        table_paths = list((self._sql_root / "Tables").glob("*/"))
+        if self._verbose: log.debug(f"Found {len(table_paths)} table directories")
+        return [str(p) for p in table_paths]
 
     @property
     def tables(self) -> List[str]:

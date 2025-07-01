@@ -18,7 +18,17 @@ import (
 // main is the entry point that sets up configuration, discovers SQL files,
 // creates endpoints, and starts the HTTP server
 func main() {
+    log.Printf("[MAIN] Starting PyGoSQL...")
+
     cfg := setup.DefaultConfig()
+    log.Printf("[MAIN] Default configuration loaded:")
+    log.Printf("[MAIN]   - Port: %d", cfg.Port)
+    log.Printf("[MAIN]   - DatabasePath: %q", cfg.DatabasePath)
+    log.Printf("[MAIN]   - SQLRoot: %q", cfg.SQLRoot)
+    log.Printf("[MAIN]   - SchemaPath: %q", cfg.SchemaPath)  // This is key!
+    log.Printf("[MAIN]   - BaseURL: %q", cfg.BaseURL)
+    log.Printf("[MAIN]   - DebugMode: %v", cfg.DebugMode)
+    log.Printf("[MAIN]   - EnableCORS: %v", cfg.EnableCORS)
 
     // Parse command line flags
     var (
@@ -35,6 +45,14 @@ func main() {
     )
     flag.Parse()
 
+    log.Printf("[MAIN] Command line arguments parsed:")
+    log.Printf("[MAIN]   - port flag: %d", *port)
+    log.Printf("[MAIN]   - db flag: %q", *dbPath)
+    log.Printf("[MAIN]   - sql flag: %q", *sqlRoot)
+    log.Printf("[MAIN]   - base flag: %q", *baseURL)
+    log.Printf("[MAIN]   - debug flag: %v", *debug)
+    log.Printf("[MAIN]   - cors flag: %v", *cors)
+
     if *help {
         ShowHelp()
         return
@@ -42,15 +60,49 @@ func main() {
 
     // Update config with flags (prefer explicit port flag over shorthand)
     if flag.Lookup("port").Value.String() != fmt.Sprint(cfg.Port) {
+        log.Printf("[MAIN] Updating port from flag: %d -> %d", cfg.Port, *port)
         cfg.Port = *port
     } else if flag.Lookup("p").Value.String() != fmt.Sprint(cfg.Port) {
+        log.Printf("[MAIN] Updating port from shorthand flag: %d -> %d", cfg.Port, *portShort)
         cfg.Port = *portShort
     }
-    cfg.DatabasePath = *dbPath
-    cfg.SQLRoot = *sqlRoot
-    cfg.BaseURL = *baseURL
-    cfg.DebugMode = *debug
-    cfg.EnableCORS = *cors
+
+    if *dbPath != cfg.DatabasePath {
+        log.Printf("[MAIN] Updating database path: %q -> %q", cfg.DatabasePath, *dbPath)
+        cfg.DatabasePath = *dbPath
+    }
+
+    if *sqlRoot != cfg.SQLRoot {
+        log.Printf("[MAIN] Updating SQL root: %q -> %q", cfg.SQLRoot, *sqlRoot)
+        cfg.SQLRoot = *sqlRoot
+        // IMPORTANT: SchemaPath should be updated when SQLRoot changes!
+        cfg.SchemaPath = filepath.Join(*sqlRoot, "schema.sql")
+        log.Printf("[MAIN] Updated schema path to: %q", cfg.SchemaPath)
+    }
+
+    if *baseURL != cfg.BaseURL {
+        log.Printf("[MAIN] Updating base URL: %q -> %q", cfg.BaseURL, *baseURL)
+        cfg.BaseURL = *baseURL
+    }
+
+    if *debug != cfg.DebugMode {
+        log.Printf("[MAIN] Updating debug mode: %v -> %v", cfg.DebugMode, *debug)
+        cfg.DebugMode = *debug
+    }
+
+    if *cors != cfg.EnableCORS {
+        log.Printf("[MAIN] Updating CORS: %v -> %v", cfg.EnableCORS, *cors)
+        cfg.EnableCORS = *cors
+    }
+
+    log.Printf("[MAIN] Final configuration:")
+    log.Printf("[MAIN]   - Port: %d", cfg.Port)
+    log.Printf("[MAIN]   - DatabasePath: %q", cfg.DatabasePath)
+    log.Printf("[MAIN]   - SQLRoot: %q", cfg.SQLRoot)
+    log.Printf("[MAIN]   - SchemaPath: %q", cfg.SchemaPath)  // This is the critical one!
+    log.Printf("[MAIN]   - BaseURL: %q", cfg.BaseURL)
+    log.Printf("[MAIN]   - DebugMode: %v", cfg.DebugMode)
+    log.Printf("[MAIN]   - EnableCORS: %v", cfg.EnableCORS)
 
     // Validate configuration
     if cfg.Port < 1 || cfg.Port > 65535 {
@@ -61,8 +113,22 @@ func main() {
         log.Fatalf("❌ SQL root directory cannot be empty")
     }
 
+    // Check if SQL root directory exists
+    if _, err := os.Stat(cfg.SQLRoot); os.IsNotExist(err) {
+        log.Printf("[MAIN] WARNING: SQL root directory does not exist: %q", cfg.SQLRoot)
+    } else {
+        log.Printf("[MAIN] SQL root directory exists: %q", cfg.SQLRoot)
+    }
+
+    // Check if schema file exists at expected location
+    if _, err := os.Stat(cfg.SchemaPath); os.IsNotExist(err) {
+        log.Printf("[MAIN] WARNING: Schema file does not exist: %q", cfg.SchemaPath)
+    } else {
+        log.Printf("[MAIN] Schema file exists: %q", cfg.SchemaPath)
+    }
+
     // Run setup if requested or if setup is incomplete
-    if *runsetup|| !IsSetupComplete(cfg) {
+    if *runsetup || !IsSetupComplete(cfg) {
         log.Println("🔧 Running initial setup...")
         if err := RunSetup(cfg); err != nil {
             log.Fatalf("❌ Setup failed: %v", err)
@@ -94,10 +160,44 @@ func main() {
 
     // Initialize database
     log.Println("💾 Initializing database...")
+
+    // Enhanced schema loading with detailed logging
     var schemaContent string
-    if schemaFile, err := database.LoadSQL(cfg.SchemaPath); err == nil && !schemaFile.IsEmpty() {
-        schemaContent = schemaFile.Content
+    log.Printf("[SCHEMA] Attempting to load schema from: %q", cfg.SchemaPath)
+
+    if cfg.SchemaPath == "" {
+        log.Printf("[SCHEMA] WARNING: cfg.SchemaPath is empty!")
+    } else {
+        // Check if file exists first
+        if _, err := os.Stat(cfg.SchemaPath); os.IsNotExist(err) {
+            log.Printf("[SCHEMA] ERROR: Schema file does not exist: %q", cfg.SchemaPath)
+        } else {
+            log.Printf("[SCHEMA] Schema file exists, attempting to load...")
+
+            schemaFile, err := database.LoadSQL(cfg.SchemaPath)
+            if err != nil {
+                log.Printf("[SCHEMA] ERROR: Failed to load schema file: %v", err)
+            } else {
+                log.Printf("[SCHEMA] Successfully loaded schema file")
+                log.Printf("[SCHEMA] Schema file path: %q", schemaFile.Path)
+                log.Printf("[SCHEMA] Schema content length: %d", len(schemaFile.Content))
+                log.Printf("[SCHEMA] Schema is empty: %v", schemaFile.IsEmpty())
+
+                if !schemaFile.IsEmpty() {
+                    schemaContent = schemaFile.Content
+                    if len(schemaContent) > 200 {
+                        log.Printf("[SCHEMA] Schema content (first 200 chars): %q", schemaContent[:200]+"...")
+                    } else {
+                        log.Printf("[SCHEMA] Schema content: %q", schemaContent)
+                    }
+                } else {
+                    log.Printf("[SCHEMA] WARNING: Schema file is empty!")
+                }
+            }
+        }
     }
+
+    log.Printf("[SCHEMA] Final schemaContent length: %d", len(schemaContent))
 
     db, err := database.NewDatabase(database.Config{
         Path:              cfg.DatabasePath,

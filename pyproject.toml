@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pygosql"
-version = "0.2.0"
+version = "0.3.0"
 description = "Python wrapper for HTTPS requesting SQL via Go"
 authors = [{ name = "genderlesspit" }]
 readme = "README.md"

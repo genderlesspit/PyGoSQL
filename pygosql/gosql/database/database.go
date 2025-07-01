@@ -67,11 +67,17 @@ func NewDatabase(cfg Config) (*Database, error) {
     }
 
     // Apply schema if provided
+    log.Printf("[NewDatabase] Checking if schema should be applied...")
     if cfg.Schema != "" {
+        log.Printf("[NewDatabase] Schema provided, calling ApplySchema...")
         if err := db.ApplySchema(cfg.Schema); err != nil {
             conn.Close()
+            log.Printf("[NewDatabase] ERROR: Failed to apply schema: %v", err)
             return nil, fmt.Errorf("failed to apply schema: %w", err)
         }
+        log.Printf("[NewDatabase] Schema applied successfully")
+    } else {
+        log.Printf("[NewDatabase] WARNING: No schema provided (Config.Schema is empty)")
     }
 
     return db, nil
@@ -87,28 +93,87 @@ func (d *Database) ApplySchema(schema string) error {
     }
 
     if strings.TrimSpace(schema) == "" {
+        log.Printf("[ApplySchema] WARNING: Schema is empty or whitespace only, returning early")
         return nil
     }
 
+    log.Printf("[ApplySchema] Processing schema...")
+
+    // Clean the schema by removing comments and empty lines
+    cleanedSchema := cleanSQLSchema(schema)
+    log.Printf("[ApplySchema] Schema after cleaning comments (length: %d)", len(cleanedSchema))
+    if len(cleanedSchema) > 300 {
+        log.Printf("[ApplySchema] Cleaned schema (first 300 chars): %q", cleanedSchema[:300]+"...")
+    } else {
+        log.Printf("[ApplySchema] Cleaned schema: %q", cleanedSchema)
+    }
+
+
     // Ensure CREATE TABLE statements are idempotent
-    fixedSchema := regexp.MustCompile(`(?i)CREATE\s+TABLE\s+`).ReplaceAllString(schema, "CREATE TABLE IF NOT EXISTS ")
+    fixedSchema := regexp.MustCompile(`(?i)CREATE\s+TABLE\s+`).ReplaceAllString(cleanedSchema, "CREATE TABLE IF NOT EXISTS ")
+    log.Printf("[ApplySchema] Schema after fixing CREATE TABLE statements (length: %d)", len(fixedSchema))
 
     // Split schema into individual statements
     statements := strings.Split(fixedSchema, ";")
+    log.Printf("[ApplySchema] Split schema into %d statements", len(statements))
 
-    for _, stmt := range statements {
+    for i, stmt := range statements {
         stmt = strings.TrimSpace(stmt)
+        log.Printf("[ApplySchema] Processing statement %d (length: %d)", i+1, len(stmt))
+
         if stmt == "" {
+            log.Printf("[ApplySchema] Statement %d is empty, skipping", i+1)
             continue
         }
 
-        log.Printf("Executing schema statement: %s", stmt)
+        if len(stmt) > 100 {
+            log.Printf("[ApplySchema] Executing schema statement %d: %s...", i+1, stmt[:100])
+        } else {
+            log.Printf("[ApplySchema] Executing schema statement %d: %s", i+1, stmt)
+        }
+
         if _, err := d.DB.Exec(stmt); err != nil {
+            log.Printf("[ApplySchema] ERROR executing statement %d: %v", i+1, err)
             return fmt.Errorf("failed to execute schema statement '%s': %w", stmt, err)
         }
+        log.Printf("[ApplySchema] Successfully executed statement %d", i+1)
     }
 
+    log.Printf("[ApplySchema] All schema statements executed successfully")
     return nil
+}
+
+// cleanSQLSchema removes comments and empty lines from SQL
+func cleanSQLSchema(schema string) string {
+    lines := strings.Split(schema, "\n")
+    var cleanedLines []string
+
+    for _, line := range lines {
+        // Trim whitespace
+        trimmed := strings.TrimSpace(line)
+
+        // Skip empty lines
+        if trimmed == "" {
+            continue
+        }
+
+        // Skip comment lines (starting with --)
+        if strings.HasPrefix(trimmed, "--") {
+            continue
+        }
+
+        // Handle inline comments (remove everything after --)
+        if commentIndex := strings.Index(trimmed, "--"); commentIndex != -1 {
+            trimmed = strings.TrimSpace(trimmed[:commentIndex])
+            if trimmed == "" {
+                continue
+            }
+        }
+
+        cleanedLines = append(cleanedLines, trimmed)
+    }
+
+    return strings.Join(cleanedLines, "\n")
 }
 
 // ExecSQL executes a SQL query and returns results in a standardized format
