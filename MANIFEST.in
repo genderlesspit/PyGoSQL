@@ -1,6 +1,8 @@
 include README.md
 include LICENSE
-
-recursive-include pygosql/scripts *.ps1 *.go *.bat *.md
-recursive-include pygops *.py
-global-exclude *.pyc __pycache__
+include pyproject.toml
+recursive-include pygosql *.py
+recursive-include gosql *
+global-exclude *.pyc
+global-exclude __pycache__
+global-exclude .git*

@@ -202,7 +202,7 @@ class PyGoSQL:
         """Initialize PyGoSQL client."""
         # Server configuration
         self._port = port or PortManager.random_port()
-        self._go_file = Path("./gosql/main.go")
+        self._go_file = Path(__file__).parent / "gosql" / "main.go"
         self._sql_root = Path.cwd() / "sql" if sql_root is None else sql_root
         self._db_path = Path.cwd() / "sql" / "app.db" if db_path is None else db_path
         self._base_url = base_url
