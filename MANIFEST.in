@@ -1,0 +1,6 @@
+include README.md
+include LICENSE
+
+recursive-include pygosql/scripts *.ps1 *.go *.bat *.md
+recursive-include pygops *.py
+global-exclude *.pyc __pycache__

@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pygosql"
+version = "0.1.0"
+description = "Python wrapper for HTTPS requesting SQL via Go"
+authors = [
+  { name = "genderlesspit" }
+]
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+dependencies = [
+  "loguru>=0.5.3",
+  "toomanyports>=0.1",
+  "aiohttp>=3.8.1",
+  "pygops"
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Database",
+  "Topic :: Software Development :: Libraries :: Python Modules"
+]
+keywords = ["sql", "go", "async", "database", "wrapper"]
+
+[project.urls]
+Homepage = "https://github.com/genderlesspit/pygosql"
+Repository = "https://github.com/genderlesspit/pygosql"
+Issues = "https://github.com/genderlesspit/pygosql/issues"
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=6.0.0",
+  "pytest-asyncio>=0.18.0",
+  "black>=21.0.0",
+  "isort>=5.0.0",
+  "mypy>=0.910"
+]
+test = [
+  "pytest>=6.0.0",
+  "pytest-asyncio>=0.18.0",
+  "pytest-cov>=3.0.0"
+]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pygosql*"]
+
+[tool.setuptools.package-data]
+"pygosql" = ["scripts/*", "*.py"]
